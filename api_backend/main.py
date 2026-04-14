@@ -1,83 +1,46 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 import psycopg2
-import pandas as pd
+from typing import List
+from pydantic import BaseModel
 
-app = FastAPI(title="API Predictiva Industria 4.0")
+app = FastAPI(title="API Mantenimiento Predictivo")
 
 def get_db_connection():
-    # Se conecta al contenedor de la base de datos
     return psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")
 
-@app.get("/api/telemetria/{id_maquina}")
-def obtener_telemetria(id_maquina: str, limite: int = 60): # Subimos a 60
-    try:
-        conn = get_db_connection()
-        query = f"""
-            SELECT id_sensor, timestamp_prediccion, valor_leido, falla_predicha 
-            FROM predicciones_ia 
-            WHERE id_sensor LIKE '%{id_maquina}%' 
-            ORDER BY timestamp_prediccion DESC LIMIT {limite};
-        """
-        df = pd.read_sql(query, conn)
-        conn.close()
-        
-        # Invertimos para el gráfico
-        df = df.iloc[::-1]
-        df['timestamp_prediccion'] = df['timestamp_prediccion'].astype(str)
-        return df.to_dict(orient="records")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+class EstadoMaquina(BaseModel):
+    id_maquina: str
+    temp_promedio: float
+    vib_promedio: float
+    decision_ia: int
+    timestamp: str
 
-@app.get("/api/planta/estado")
-def obtener_estado_planta():
-    try:
-        conn = get_db_connection()
-        query = """
-            SELECT falla_predicha, COUNT(*) as total 
-            FROM (SELECT falla_predicha FROM predicciones_ia ORDER BY timestamp_prediccion DESC LIMIT 40) as ultimos
-            GROUP BY falla_predicha;
-        """
-        df = pd.read_sql(query, conn)
-        conn.close()
-        return df.to_dict(orient="records")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/planta/estado_ventanas", response_model=List[EstadoMaquina])
+def get_estado_ventanas():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT ON (id_sensor) id_sensor, valor_promedio, valor_maximo, decision_id, timestamp_ventana
+        FROM predicciones_ia_ventanas ORDER BY id_sensor, timestamp_ventana DESC;
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [{"id_maquina": r[0], "temp_promedio": round(r[1] or 0, 2), "vib_promedio": round(r[2] or 0, 2), "decision_ia": r[3], "timestamp": str(r[4])} for r in rows]
+
+# --- NUEVO ENDPOINT PARA EL ANÁLISIS INDIVIDUAL ---
+@app.get("/api/telemetria/{id_maquina}")
+def get_historial_maquina(id_maquina: str):
+    """Obtiene las últimas 15 ventanas (15 minutos) de una máquina específica."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT valor_promedio, valor_maximo, decision_id, timestamp_ventana
+        FROM predicciones_ia_ventanas
+        WHERE id_sensor = %s
+        ORDER BY timestamp_ventana DESC LIMIT 15;
+    """, (id_maquina,))
+    rows = cur.fetchall()
+    conn.close()
     
-@app.get("/api/planta/estado_actual")
-def obtener_estado_actual_todas():
-    # Devuelve la última lectura de CADA sensor en la planta
-    try:
-        conn = get_db_connection()
-        query = """
-            SELECT DISTINCT ON (id_sensor) id_sensor, timestamp_prediccion, valor_leido, falla_predicha
-            FROM predicciones_ia
-            ORDER BY id_sensor, timestamp_prediccion DESC;
-        """
-        df = pd.read_sql(query, conn)
-        conn.close()
-        df['timestamp_prediccion'] = df['timestamp_prediccion'].astype(str)
-        return df.to_dict(orient="records")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@app.get("/api/planta/historico_10m")
-def obtener_historico_10m():
-    try:
-        conn = get_db_connection()
-        # Buscamos alertas (falla=1) de los últimos 10 minutos, agrupadas por máquina
-        query = """
-            SELECT 
-                substring(id_sensor from 'M-\d{3}') AS id_maquina,
-                COUNT(*) as total_fallas
-            FROM predicciones_ia
-            WHERE falla_predicha = 1 
-              AND timestamp_prediccion >= NOW() - INTERVAL '10 minutes'
-            GROUP BY id_maquina
-            ORDER BY total_fallas DESC
-            LIMIT 10;
-        """
-        df = pd.read_sql(query, conn)
-        conn.close()
-        return df.to_dict(orient="records")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Devolvemos la data ordenada cronológicamente (de más antigua a más nueva para el gráfico)
+    return [{"temp": round(r[0] or 0, 2), "vib": round(r[1] or 0, 2), "decision": r[2], "hora": str(r[3]).split(" ")[1]} for r in reversed(rows)]

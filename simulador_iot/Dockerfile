@@ -1,6 +1,12 @@
 FROM python:3.11-slim
+
 WORKDIR /app
-RUN pip install confluent-kafka pandas
+
+# Copiamos e instalamos dependencias
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiamos el código
 COPY sensor_producer.py .
-CMD ["python", "-u", "sensor_producer.py"] 
-# El -u es para que los print() se vean en tiempo real en los logs de Docker
+
+CMD ["python", "-u","sensor_producer.py"]

@@ -2,52 +2,88 @@ import os
 import joblib
 import pandas as pd
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, pandas_udf
+from pyspark.sql.functions import from_json, col, window, avg, when, split, concat_ws, udf
 from pyspark.sql.types import StructType, StringType, DoubleType, TimestampType, IntegerType
 
-# Con Java 11, solo necesitamos los drivers puros
+# --- CONFIGURACIÓN ---
 os.environ['PYSPARK_SUBMIT_ARGS'] = '--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.postgresql:postgresql:42.6.0 pyspark-shell'
 
-spark = SparkSession.builder.appName("Industria40_Completa").getOrCreate()
+spark = SparkSession.builder \
+    .appName("Industria40_Decision_Engine") \
+    .getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
-# ... (Todo tu código de Carga de IA y Guardado sigue exactamente igual)
-
-# CARGA DE IA (Rutas relativas corregidas)
+# Cargamos el cerebro (espera Temp y Vib)
 modelo = joblib.load('modelo_falla.pkl')
-columnas_entrenamiento = joblib.load('columnas_modelo.pkl')
 
-@pandas_udf(IntegerType())
-def predecir_falla_udf(id_sensor_series: pd.Series, valor_medicion_series: pd.Series) -> pd.Series:
-    df_temp = pd.DataFrame({'id_sensor': id_sensor_series, 'valor_medicion': valor_medicion_series})
-    X = pd.get_dummies(df_temp, columns=['id_sensor'])
-    for c in columnas_entrenamiento:
-        if c not in X.columns: X[c] = 0
-    return pd.Series(modelo.predict(X[columnas_entrenamiento]))
+schema = StructType() \
+    .add("id_sensor", StringType()) \
+    .add("valor", DoubleType()) \
+    .add("timestamp", StringType())
 
-# PROCESAMIENTO
-esquema = StructType().add("id_sensor", StringType()).add("timestamp_evento", TimestampType()).add("valor_medicion", DoubleType())
+# --- LÓGICA DE PREDICCIÓN MULTIVARIABLE ---
+def evaluar_semaforo(t_avg, v_avg):
+    # Si por alguna razón falta un sensor en ese minuto, asumimos normalidad
+    if t_avg is None or v_avg is None:
+        return 0
+    # Le pasamos los 2 ingredientes al modelo
+    pred = modelo.predict([[t_avg, v_avg]])
+    return int(pred[0])
 
-df_kafka = spark.readStream.format("kafka").option("kafka.bootstrap.servers", "iot-kafka:9092").option("subscribe", "telemetria_sensores").load()
+semaforo_udf = udf(evaluar_semaforo, IntegerType())
 
-df_inteligente = df_kafka.selectExpr("CAST(value AS STRING)") \
-    .select(from_json(col("value"), esquema).alias("data")).select("data.*") \
-    .filter(col("valor_medicion") > -500) \
-    .withColumn("falla_predicha", predecir_falla_udf(col("id_sensor"), col("valor_medicion")))
+# --- LECTURA KAFKA ---
+raw_df = spark.readStream \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", "kafka:9092") \
+    .option("subscribe", "telemetria_sensores") \
+    .load()
 
-# GUARDADO DOBLE EN POSTGRES
-def guardar_tablas(df, epoch_id):
+telemetria_df = raw_df.selectExpr("CAST(value AS STRING)") \
+    .select(from_json(col("value"), schema).alias("data")) \
+    .select("data.*") \
+    .withColumn("timestamp", col("timestamp").cast(TimestampType()))
+
+# --- EL PIVOT (UNIR TEMP Y VIB POR MÁQUINA) ---
+# Cortamos "S-TEMP-M-001" para saber qué tipo de sensor es y a qué máquina pertenece
+parsed_df = telemetria_df \
+    .withColumn("tipo_sensor", split(col("id_sensor"), "-").getItem(1)) \
+    .withColumn("maquina", concat_ws("-", split(col("id_sensor"), "-").getItem(2), split(col("id_sensor"), "-").getItem(3)))
+
+windowed_df = parsed_df \
+    .withWatermark("timestamp", "10 seconds") \
+    .groupBy(
+        window(col("timestamp"), "1 minute"),
+        col("maquina")
+    ) \
+    .agg(
+        # Calculamos el promedio de cada uno por separado en la misma fila
+        avg(when(col("tipo_sensor") == "TEMP", col("valor"))).alias("temp_avg"),
+        avg(when(col("tipo_sensor") == "VIB", col("valor"))).alias("vib_avg")
+    )
+
+# --- PREDICCIÓN Y ADAPTACIÓN PARA POSTGRES ---
+final_df = windowed_df \
+    .withColumn("decision_id", semaforo_udf(col("temp_avg"), col("vib_avg"))) \
+    .withColumn("timestamp_ventana", col("window.end")) \
+    .drop("window") \
+    .select(
+        col("maquina").alias("id_sensor"),
+        col("temp_avg").alias("valor_promedio"), # Mapeamos a la estructura de tu BD
+        col("vib_avg").alias("valor_maximo"),    # Mapeamos a la estructura de tu BD
+        col("timestamp_ventana"),
+        col("decision_id")
+    )
+
+def write_to_postgres(batch_df, batch_id):
     url = "jdbc:postgresql://iot-postgres:5432/industria40"
     auth = {"user": "admin", "password": "admin123", "driver": "org.postgresql.Driver"}
-    
-    # 1. Histórico Limpio
-    df.select("id_sensor", "timestamp_evento", "valor_medicion") \
-      .write.jdbc(url, "telemetria_limpia", "append", auth)
-    
-    # 2. Predicciones IA
-    df.select("id_sensor", col("timestamp_evento").alias("timestamp_prediccion"), 
-              col("valor_medicion").alias("valor_leido"), "falla_predicha") \
-      .write.jdbc(url, "predicciones_ia", "append", auth)
+    batch_df.write.jdbc(url, "predicciones_ia_ventanas", "append", auth)
 
-df_inteligente.writeStream.foreachBatch(guardar_tablas).start()
-spark.streams.awaitAnyTermination()
+query = final_df.writeStream \
+    .foreachBatch(write_to_postgres) \
+    .outputMode("update") \
+    .start()
+
+print("Motor de Decisión Multivariable iniciado. Procesando ventanas de 1 minuto...")
+query.awaitTermination()

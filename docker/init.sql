@@ -14,25 +14,56 @@ CREATE TABLE IF NOT EXISTS sensores (
     unidad_medida VARCHAR(10)
 );
 
--- 3. HECHOS: DATA LIMPIA (Histórico procesado por Spark)
+
+-- ==========================================================
+-- 1. CAPA DE TELEMETRÍA (DATOS EN TIEMPO REAL)
+-- ==========================================================
+
+-- Almacena cada dato que sale de Spark (Limpieza inicial)
 CREATE TABLE IF NOT EXISTS telemetria_limpia (
-    id SERIAL PRIMARY KEY,
-    id_sensor VARCHAR(50) REFERENCES sensores(id_sensor),
+    id_sensor VARCHAR(50),
+    valor DOUBLE PRECISION,
     timestamp_evento TIMESTAMP,
-    valor_medicion FLOAT
+    fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. HECHOS: DATA CON IA (Resultados de la predicción)
+-- Almacena predicciones fila por fila (para los gráficos de líneas)
 CREATE TABLE IF NOT EXISTS predicciones_ia (
-    id SERIAL PRIMARY KEY,
-    id_sensor VARCHAR(50) REFERENCES sensores(id_sensor),
-    timestamp_prediccion TIMESTAMP,
-    valor_leido FLOAT,
-    probabilidad_falla FLOAT, -- Resultado del modelo
-    falla_predicha INTEGER     -- 0: Normal, 1: Alerta
+    id_sensor VARCHAR(50),
+    valor_leido DOUBLE PRECISION,
+    falla_predicha INTEGER, -- 0 o 1
+    timestamp_prediccion TIMESTAMP
 );
 
--- POBLAR DIMENSIONES (20 Máquinas y sus 40 sensores)
+-- ==========================================================
+-- 2. CAPA ANALÍTICA (VENTANAS DE TIEMPO / DECISIÓN)
+-- ==========================================================
+
+-- Almacena el resumen de 1 minuto procesado por Spark
+CREATE TABLE IF NOT EXISTS predicciones_ia_ventanas (
+    id_sensor VARCHAR(50),
+    valor_promedio DOUBLE PRECISION,
+    valor_maximo DOUBLE PRECISION,
+    timestamp_ventana TIMESTAMP,
+    decision_id INTEGER -- 0: Normal, 1: Riesgo, 2: Parada
+);
+
+-- ==========================================================
+-- 3. CAPA DE CONTROL (INGENIERÍA DEL CAOS)
+-- ==========================================================
+
+-- Controla el estado de las máquinas desde la interfaz web
+CREATE TABLE IF NOT EXISTS estado_maquinas (
+    id_maquina VARCHAR(10) PRIMARY KEY,
+    estado_actual VARCHAR(50) DEFAULT 'NORMAL',
+    ultima_modificacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Inicialización de las 20 máquinas en estado óptimo
+INSERT INTO estado_maquinas (id_maquina)
+SELECT 'M-' || lpad(i::text, 3, '0') FROM generate_series(1, 20) s(i)
+ON CONFLICT (id_maquina) DO NOTHING;
+
 DO $$
 DECLARE
     i INT;
@@ -51,3 +82,8 @@ BEGIN
         VALUES ('S-VIB-' || maq_id, maq_id, 'Vibracion', 'Hz') ON CONFLICT DO NOTHING;
     END LOOP;
 END $$;
+
+-- Insertamos las 20 máquinas por defecto en estado NORMAL
+INSERT INTO estado_maquinas (id_maquina)
+SELECT 'M-' || lpad(i::text, 3, '0') FROM generate_series(1, 20) s(i)
+ON CONFLICT (id_maquina) DO NOTHING;
