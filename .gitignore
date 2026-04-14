@@ -1,0 +1,7 @@
+# .gitignore
+**/__pycache__/
+**/*.pyc
+.env
+nginx_data/
+nginx_letsencrypt/
+db_data/
