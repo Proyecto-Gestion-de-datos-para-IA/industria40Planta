@@ -79,8 +79,6 @@ services:
   api-servicio:
     build: ./api_backend
     container_name: api-servicio
-    ports:
-      - "8000:8000"
     depends_on:
       - iot-postgres
     networks:
@@ -89,10 +87,22 @@ services:
   dashboard:
     build: ./dashboard_web
     container_name: dashboard
-    ports:
-      - "8501:8501"
     depends_on:
       - api-servicio
+    networks:
+      - iot-network
+
+  nginx-proxy:
+    image: "jc21/nginx-proxy-manager:latest"
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - "80:80" # Tráfico HTTP
+      - "81:81" # Panel de administración de Nginx
+      - "443:443" # Tráfico HTTPS (SSL)
+    volumes:
+      - ./nginx_data:/data
+      - ./nginx_letsencrypt:/etc/letsencrypt
     networks:
       - iot-network
 
