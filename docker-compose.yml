@@ -1,26 +1,30 @@
 services:
   # ==========================================
-  # FASE 0: INFRAESTRUCTURA BASE (BITNAMI)
+  # FASE 0: INFRAESTRUCTURA BASE
   # ==========================================
-  zookeeper:
-    # Usamos la imagen oficial de la librería de Docker (más compatible)
-    image: zookeeper:3.9
-    container_name: zookeeper
+  iot-postgres:
+    image: postgres:15
+    container_name: iot-postgres
+    restart: always
     environment:
-      - ALLOW_ANONYMOUS_LOGIN=yes
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: industria40
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - iot-network
 
-  # ==========================================
-  # FASE 0: INFRAESTRUCTURA BASE (APACHE KAFKA OFICIAL)
-  # ==========================================
   kafka:
     image: apache/kafka:latest
     container_name: kafka
+    restart: always
     ports:
       - "9092:9092"
     environment:
-      # Configuración de KRaft (Sin Zookeeper)
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
@@ -34,61 +38,19 @@ services:
     networks:
       - iot-network
 
-  iot-postgres:
-    image: postgres:15-alpine
-    container_name: iot-postgres
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: always
     ports:
-      - "5432:5432"
+      - "9000:9000"
+      - "9001:9001"
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-      POSTGRES_DB: industria40
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=Industria40_Secure
+    command: server /data --console-address ":9001"
     volumes:
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - iot-network
-
-  # ==========================================
-  # FASE 1: GEMELO DIGITAL E INGESTA
-  # ==========================================
-  simulador-iot:
-    build: ./simulador_iot
-    container_name: simulador-iot
-    depends_on:
-      - kafka
-      - iot-postgres
-    networks:
-      - iot-network
-
-  # ==========================================
-  # FASE 2: MOTOR DE DECISIÓN (IA + SPARK)
-  # ==========================================
-  iot-spark-app:
-    build: ./procesamiento_spark
-    container_name: iot-spark-app
-    depends_on:
-      - kafka
-      - iot-postgres
-    networks:
-      - iot-network
-
-  # ==========================================
-  # FASE 3 & 4: API BACKEND Y DASHBOARD
-  # ==========================================
-  api-servicio:
-    build: ./api_backend
-    container_name: api-servicio
-    depends_on:
-      - iot-postgres
-    networks:
-      - iot-network
-
-  dashboard:
-    build: ./dashboard_web
-    container_name: dashboard
-    depends_on:
-      - api-servicio
+      - ./minio_data:/data
     networks:
       - iot-network
 
@@ -97,18 +59,57 @@ services:
     container_name: nginx-proxy
     restart: always
     ports:
-      - "80:80" # Tráfico HTTP
-      - "81:81" # Panel de administración de Nginx
-      - "443:443" # Tráfico HTTPS (SSL)
+      - "80:80"
+      - "81:81"
+      - "443:443"
     volumes:
       - ./nginx_data:/data
       - ./nginx_letsencrypt:/etc/letsencrypt
     networks:
       - iot-network
 
+  # ==========================================
+  # FASE 1: SIMULADOR (EL CAOS)
+  # ==========================================
+  simulador-iot:
+    build: ./simulador_iot
+    container_name: simulador-iot
+    restart: always
+    networks:
+      - iot-network
+
+  # ==========================================
+  # FASE 2: CEREBRO IA (SPARK)
+  # ==========================================
+  iot-spark-app:
+    build: ./procesamiento_spark
+    container_name: iot-spark-app
+    restart: always
+    networks:
+      - iot-network
+
+  # ==========================================
+  # FASE 3: SERVICIOS WEB (API & DASHBOARD)
+  # ==========================================
+  api-servicio:
+    build: ./api_backend
+    container_name: api-servicio
+    restart: always
+    ports:
+      - "8000:8000"
+    networks:
+      - iot-network
+
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    restart: always
+    ports:
+      - "8501:8501"
+    command: streamlit run app.py --server.enableCORS=false --server.enableXsrfProtection=false
+    networks:
+      - iot-network
+
 networks:
   iot-network:
     driver: bridge
-
-volumes:
-  postgres_data:

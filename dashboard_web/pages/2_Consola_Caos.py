@@ -1,60 +1,42 @@
 import streamlit as st
 import psycopg2
-import pandas as pd
 
-st.set_page_config(page_title="Consola del Caos", page_icon="🌪️", layout="wide")
+st.set_page_config(page_title="Consola de Ingeniería del Caos", page_icon="🌪️")
 
-def update_estado(maquina, nuevo_estado):
+st.markdown("<h1 style='color: #EF553B;'>🌪️ Consola de Ingeniería del Caos</h1>", unsafe_allow_html=True)
+st.write("Inyecta fallas mecánicas y térmicas en el Gemelo Digital para probar la respuesta de la Inteligencia Artificial.")
+
+def update_estado(maquina_id, nuevo_estado):
     try:
         conn = psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE estado_maquinas SET estado_actual = %s, ultima_modificacion = CURRENT_TIMESTAMP WHERE id_maquina = %s",
-            (nuevo_estado, maquina)
-        )
+        cur.execute("UPDATE estado_maquinas SET estado = %s WHERE id_sensor = %s;", (nuevo_estado, maquina_id))
         conn.commit()
         conn.close()
-        st.toast(f"Comando enviado: {maquina} -> {nuevo_estado}")
+        st.success(f"[{maquina_id}] Estado actualizado a: {nuevo_estado}")
     except Exception as e:
-        st.error(f"Error de BD: {e}")
+        st.error(f"Error de conexión a la BD: {e}")
 
-st.markdown("<h1 style='color: #EF553B; text-align: center;'>🌪️ Ingeniería del Caos (Inyector de Fallas)</h1>", unsafe_allow_html=True)
-st.markdown("Usa este panel para alterar físicamente el comportamiento de los motores en el simulador Kafka. La Inteligencia Artificial deberá detectar la anomalía en tiempo real.")
-st.divider()
+maq_objetivo = st.selectbox("Seleccione la Máquina Objetivo:", [f"M-{str(i).zfill(3)}" for i in range(1, 21)])
 
-col_control, col_estado = st.columns([1, 1.5])
-
-with col_control:
-    st.subheader("🛠️ Panel de Inyección")
-    lista_maquinas = [f"M-{str(i).zfill(3)}" for i in range(1, 21)]
-    maq_objetivo = st.selectbox("Seleccionar Activo a sabotear:", lista_maquinas)
+with st.container(border=True):
+    st.subheader(f"Inyectar Anomalías en {maq_objetivo}")
     
-    st.markdown("#### Seleccionar Evento Físico:")
     if st.button("🟢 Restaurar a NORMAL", use_container_width=True):
         update_estado(maq_objetivo, "NORMAL")
-    if st.button("🔥 Inyectar FRICCIÓN TÉRMICA (Sube Temp)", use_container_width=True):
+    if st.button("🔥 Fricción Térmica", use_container_width=True):
         update_estado(maq_objetivo, "FRICCION_TERMICA")
-    if st.button("📳 Inyectar DESALINEACIÓN (Sube Vib)", use_container_width=True):
+    if st.button("📳 Desalineación Severa", use_container_width=True):
         update_estado(maq_objetivo, "DESALINEACION")
+    
+    st.markdown("#### Fallas Críticas:")
     if st.button("❄️ Falla de Refrigerante (Calor Extremo)", use_container_width=True):
         update_estado(maq_objetivo, "FALLA_REFRIGERACION")
     if st.button("🔩 Soltura de Base (Vibración Extrema)", use_container_width=True):
         update_estado(maq_objetivo, "SOLTURA_BASE")
-    if st.button("💥 Forzar FALLA CATASTRÓFICA", use_container_width=True):
-        update_estado(maq_objetivo, "FALLA_CATASTROFICA")
-
-with col_estado:
-    st.subheader("📋 Estado Actual del Clúster")
-    if st.button("🔄 Actualizar Tabla"):
-        try:
-            conn = psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")
-            df_estados = pd.read_sql("SELECT * FROM estado_maquinas ORDER BY id_maquina;", conn)
-            conn.close()
-            # Destacamos visualmente las que no están normales
-            def highlight_errors(val):
-                color = 'red' if val != 'NORMAL' else 'green'
-                return f'color: {color}'
-            
-            st.dataframe(df_estados.style.map(highlight_errors, subset=['estado_actual']), use_container_width=True, hide_index=True)
-        except:
-            st.warning("No se pudo cargar la tabla de estados.")
+        
+    st.divider()
+    st.markdown("#### 🚨 Control de Emergencia")
+    if st.button("🛑 APAGAR MÁQUINA INMEDIATAMENTE", type="primary", use_container_width=True):
+        update_estado(maq_objetivo, "APAGADA")
+        st.toast(f"Orden de PARADA DE EMERGENCIA enviada a {maq_objetivo}")
