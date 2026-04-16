@@ -19,21 +19,38 @@ def obtener_configuracion_viva():
         return []
 
 def generar_lectura(maquina_id, estado):
-    # Lógica de estados basada en tus nuevas categorías
+    # --- ESTADOS BASE ---
     if estado == "NORMAL":
         t, v = np.random.normal(40, 2), np.random.normal(10, 1)
-    elif estado == "FRICCION_TERMICA":
-        t, v = np.random.normal(85, 4), np.random.normal(15, 2)
-    elif estado == "DESALINEACION":
-        t, v = np.random.normal(50, 3), np.random.normal(35, 4)
-    elif estado == "FALLA_REFRIGERACION":
-        t, v = np.random.normal(95, 3), np.random.normal(12, 1)
-    elif estado == "SOLTURA_BASE":
-        t, v = np.random.normal(42, 2), np.random.normal(45, 5)
     elif estado == "APAGADA":
         t, v = np.random.normal(22, 0.5), np.random.normal(0, 0.1)
+        
+    # --- 5 ESTADOS DE RIESGO (Anomalías leves, Nivel 1) ---
+    elif estado == "FRICCION_LEVE":
+        t, v = np.random.normal(65, 3), np.random.normal(15, 2)
+    elif estado == "DESALINEACION_LEVE":
+        t, v = np.random.normal(45, 2), np.random.normal(22, 2)
+    elif estado == "FALTA_LUBRICACION":
+        t, v = np.random.normal(70, 4), np.random.normal(18, 2)
+    elif estado == "DESGASTE_RODAMIENTO":
+        t, v = np.random.normal(50, 2), np.random.normal(25, 3)
+    elif estado == "SOBRECARGA_LIGERA":
+        t, v = np.random.normal(75, 3), np.random.normal(12, 1)
+
+    # --- 5 ESTADOS CRÍTICOS (Peligro inminente, Nivel 2 -> Telegram) ---
+    elif estado == "FRICCION_SEVERA":
+        t, v = np.random.normal(95, 4), np.random.normal(28, 3)
+    elif estado == "DESALINEACION_SEVERA":
+        t, v = np.random.normal(60, 3), np.random.normal(45, 4)
+    elif estado == "FALLA_REFRIGERACION":
+        t, v = np.random.normal(115, 5), np.random.normal(15, 2)
+    elif estado == "SOLTURA_BASE":
+        t, v = np.random.normal(48, 3), np.random.normal(65, 5)
+    elif estado == "ROTURA_ENGRANAJE":
+        t, v = np.random.normal(88, 5), np.random.normal(58, 6)
+        
     else:
-        t, v = 40, 10
+        t, v = 40, 10 # Default si hay error
 
     ts = datetime.utcnow().isoformat() + "Z"
     return [
@@ -42,8 +59,8 @@ def generar_lectura(maquina_id, estado):
     ]
 
 if __name__ == "__main__":
-    print("🚀 Simulador Dinámico Iniciado...")
-    time.sleep(20) # Margen para que Kafka y Postgres despierten
+    print("🚀 Simulador Dinámico Iniciado (Con 10 Fallas)...")
+    time.sleep(15) # Margen para que Kafka y Postgres despierten
     producer = KafkaProducer(
         bootstrap_servers=['kafka:9092'],
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
