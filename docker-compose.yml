@@ -101,7 +101,7 @@ services:
       - iot-network
 
   dashboard:
-    build: ./dashboard
+    build: ./dashboard_web
     container_name: dashboard
     restart: always
     ports:

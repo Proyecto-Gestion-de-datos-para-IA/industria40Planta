@@ -1,19 +1,15 @@
 import os
 import joblib
-import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, window, avg, when, split, concat_ws, udf
 from pyspark.sql.types import StructType, StringType, DoubleType, TimestampType, IntegerType
 
-# --- CONFIGURACIÓN DE PAQUETES (KAFKA, POSTGRES Y AWS PARA MINIO) ---
+# Configuración de paquetes
 os.environ['PYSPARK_SUBMIT_ARGS'] = '--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.postgresql:postgresql:42.6.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 pyspark-shell'
 
-spark = SparkSession.builder \
-    .appName("Industria40_Decision_Engine") \
-    .getOrCreate()
-spark.sparkContext.setLogLevel("WARN")
+spark = SparkSession.builder.appName("Industria40_Full_Engine").getOrCreate()
 
-# --- CONFIGURACIÓN MINIO S3 ---
+# Configuración MinIO
 sc = spark.sparkContext
 sc._jsc.hadoopConfiguration().set("fs.s3a.endpoint", "http://minio:9000")
 sc._jsc.hadoopConfiguration().set("fs.s3a.access.key", "admin")
@@ -22,72 +18,41 @@ sc._jsc.hadoopConfiguration().set("fs.s3a.path.style.access", "true")
 sc._jsc.hadoopConfiguration().set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
 
 modelo = joblib.load('modelo_falla.pkl')
+semaforo_udf = udf(lambda t, v: int(modelo.predict([[t, v]])[0]), IntegerType())
 
-schema = StructType() \
-    .add("id_sensor", StringType()) \
-    .add("valor", DoubleType()) \
-    .add("timestamp", StringType())
+schema = StructType().add("id_sensor", StringType()).add("valor", DoubleType()).add("timestamp", StringType())
 
-def evaluar_semaforo(t_avg, v_avg):
-    if t_avg is None or v_avg is None:
-        return 0
-    pred = modelo.predict([[t_avg, v_avg]])
-    return int(pred[0])
+# 1. LECTURA DE KAFKA
+raw_stream = spark.readStream.format("kafka").option("kafka.bootstrap.servers", "kafka:9092").option("subscribe", "telemetria_sensores").load()
 
-semaforo_udf = udf(evaluar_semaforo, IntegerType())
-
-raw_df = spark.readStream \
-    .format("kafka") \
-    .option("kafka.bootstrap.servers", "kafka:9092") \
-    .option("subscribe", "telemetria_sensores") \
-    .load()
-
-telemetria_df = raw_df.selectExpr("CAST(value AS STRING)") \
-    .select(from_json(col("value"), schema).alias("data")) \
-    .select("data.*") \
+parsed_stream = raw_stream.select(from_json(col("value").cast("string"), schema).alias("data")).select("data.*") \
     .withColumn("timestamp", col("timestamp").cast(TimestampType()))
 
-parsed_df = telemetria_df \
-    .withColumn("tipo_sensor", split(col("id_sensor"), "-").getItem(1)) \
-    .withColumn("maquina", concat_ws("-", split(col("id_sensor"), "-").getItem(2), split(col("id_sensor"), "-").getItem(3)))
+# 2. SALIDA A: telemetria_limpia (Datos Crudos para Velocímetros)
+def write_raw(batch_df, batch_id):
+    db_args = {"user": "admin", "password": "admin123", "driver": "org.postgresql.Driver"}
+    batch_df.select(col("id_sensor"), col("valor"), col("timestamp").alias("timestamp_evento")) \
+        .write.jdbc("jdbc:postgresql://iot-postgres:5432/industria40", "telemetria_limpia", "append", db_args)
 
-windowed_df = parsed_df \
-    .withWatermark("timestamp", "10 seconds") \
+raw_query = parsed_stream.writeStream.foreachBatch(write_raw).start()
+
+# 3. PROCESAMIENTO DE VENTANAS (Para Dashboards y MinIO)
+windowed_df = parsed_stream.withWatermark("timestamp", "10 seconds") \
+    .withColumn("maquina", concat_ws("-", split(col("id_sensor"), "-").getItem(2), split(col("id_sensor"), "-").getItem(3))) \
     .groupBy(window(col("timestamp"), "1 minute"), col("maquina")) \
-    .agg(
-        avg(when(col("tipo_sensor") == "TEMP", col("valor"))).alias("temp_avg"),
-        avg(when(col("tipo_sensor") == "VIB", col("valor"))).alias("vib_avg")
-    )
+    .agg(avg(when(col("id_sensor").contains("TEMP"), col("valor"))).alias("t_avg"),
+         avg(when(col("id_sensor").contains("VIB"), col("valor"))).alias("v_avg")) \
+    .withColumn("decision_id", semaforo_udf(col("t_avg"), col("v_avg")))
 
-final_df = windowed_df \
-    .withColumn("decision_id", semaforo_udf(col("temp_avg"), col("vib_avg"))) \
-    .withColumn("timestamp_ventana", col("window.end")) \
-    .drop("window") \
-    .select(
-        col("maquina").alias("id_sensor"),
-        col("temp_avg").alias("valor_promedio"),
-        col("vib_avg").alias("valor_maximo"),
-        col("timestamp_ventana"),
-        col("decision_id")
-    )
+def write_analytics(batch_df, batch_id):
+    db_args = {"user": "admin", "password": "admin123", "driver": "org.postgresql.Driver"}
+    # Guardar en Postgres (predicciones_ia_ventanas)
+    batch_df.select(col("maquina").alias("id_sensor"), col("t_avg").alias("valor_promedio"), 
+                    col("v_avg").alias("valor_maximo"), col("window.end").alias("timestamp_ventana"), col("decision_id")) \
+        .write.jdbc("jdbc:postgresql://iot-postgres:5432/industria40", "predicciones_ia_ventanas", "append", db_args)
+    # Guardar en MinIO
+    batch_df.write.mode("append").parquet("s3a://datasets/historico_planta/")
 
-def write_to_sinks(batch_df, batch_id):
-    # SINK 1: Postgres (Tablero en tiempo real)
-    url_db = "jdbc:postgresql://iot-postgres:5432/industria40"
-    auth = {"user": "admin", "password": "admin123", "driver": "org.postgresql.Driver"}
-    batch_df.write.jdbc(url_db, "predicciones_ia_ventanas", "append", auth)
-    
-    # SINK 2: MinIO Data Lake (Para reentrenamiento MLOps)
-    # Se guarda como Parquet, que incluye el esquema y es ultra rápido
-    try:
-        batch_df.write.mode("append").parquet("s3a://datasets/historico_planta/")
-    except Exception as e:
-        print(f"Error MinIO: {e}")
+analytics_query = windowed_df.writeStream.foreachBatch(write_analytics).start()
 
-query = final_df.writeStream \
-    .foreachBatch(write_to_sinks) \
-    .outputMode("update") \
-    .start()
-
-print("Motor Iniciado: Procesando telemetría hacia Postgres y MinIO...")
-query.awaitTermination()
+spark.streams.awaitAnyTermination()

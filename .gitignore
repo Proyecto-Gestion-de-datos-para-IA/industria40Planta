@@ -5,3 +5,5 @@
 nginx_data/
 nginx_letsencrypt/
 db_data/
+minio_data/
+logs/

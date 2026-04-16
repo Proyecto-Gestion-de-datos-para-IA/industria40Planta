@@ -10,7 +10,15 @@ def update_estado(maquina_id, nuevo_estado):
     try:
         conn = psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")
         cur = conn.cursor()
-        cur.execute("UPDATE estado_maquinas SET estado = %s WHERE id_sensor = %s;", (nuevo_estado, maquina_id))
+        
+        # AQUÍ ESTÁ EL CAMBIO: Usamos estado_actual y id_maquina
+        consulta = """
+            UPDATE estado_maquinas 
+            SET estado_actual = %s, ultima_modificacion = CURRENT_TIMESTAMP 
+            WHERE id_maquina = %s;
+        """
+        cur.execute(consulta, (nuevo_estado, maquina_id))
+        
         conn.commit()
         conn.close()
         st.success(f"[{maquina_id}] Estado actualizado a: {nuevo_estado}")
