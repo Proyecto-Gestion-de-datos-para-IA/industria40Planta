@@ -72,19 +72,17 @@ final_df = windowed_df \
     )
 
 def write_to_sinks(batch_df, batch_id):
-    # Sink 1: PostgreSQL
+    # SINK 1: Postgres (Tablero en tiempo real)
     url_db = "jdbc:postgresql://iot-postgres:5432/industria40"
     auth = {"user": "admin", "password": "admin123", "driver": "org.postgresql.Driver"}
-    try:
-        batch_df.write.jdbc(url_db, "predicciones_ia_ventanas", "append", auth)
-    except Exception as e:
-        print(f"Error escribiendo en Postgres: {e}")
-        
-    # Sink 2: MinIO (Parquet)
+    batch_df.write.jdbc(url_db, "predicciones_ia_ventanas", "append", auth)
+    
+    # SINK 2: MinIO Data Lake (Para reentrenamiento MLOps)
+    # Se guarda como Parquet, que incluye el esquema y es ultra rápido
     try:
         batch_df.write.mode("append").parquet("s3a://datasets/historico_planta/")
     except Exception as e:
-        print(f"Error escribiendo en MinIO: {e}")
+        print(f"Error MinIO: {e}")
 
 query = final_df.writeStream \
     .foreachBatch(write_to_sinks) \

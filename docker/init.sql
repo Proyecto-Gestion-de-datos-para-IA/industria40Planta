@@ -14,12 +14,7 @@ CREATE TABLE IF NOT EXISTS sensores (
     unidad_medida VARCHAR(10)
 );
 
-
--- ==========================================================
--- 1. CAPA DE TELEMETRÍA (DATOS EN TIEMPO REAL)
--- ==========================================================
-
--- Almacena cada dato que sale de Spark (Limpieza inicial)
+-- 3. CAPA DE TELEMETRÍA Y PREDICCIONES
 CREATE TABLE IF NOT EXISTS telemetria_limpia (
     id_sensor VARCHAR(50),
     valor DOUBLE PRECISION,
@@ -27,43 +22,29 @@ CREATE TABLE IF NOT EXISTS telemetria_limpia (
     fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Almacena predicciones fila por fila (para los gráficos de líneas)
 CREATE TABLE IF NOT EXISTS predicciones_ia (
     id_sensor VARCHAR(50),
     valor_leido DOUBLE PRECISION,
-    falla_predicha INTEGER, -- 0 o 1
+    falla_predicha INTEGER,
     timestamp_prediccion TIMESTAMP
 );
 
--- ==========================================================
--- 2. CAPA ANALÍTICA (VENTANAS DE TIEMPO / DECISIÓN)
--- ==========================================================
-
--- Almacena el resumen de 1 minuto procesado por Spark
 CREATE TABLE IF NOT EXISTS predicciones_ia_ventanas (
     id_sensor VARCHAR(50),
     valor_promedio DOUBLE PRECISION,
     valor_maximo DOUBLE PRECISION,
     timestamp_ventana TIMESTAMP,
-    decision_id INTEGER -- 0: Normal, 1: Riesgo, 2: Parada
+    decision_id INTEGER
 );
 
--- ==========================================================
--- 3. CAPA DE CONTROL (INGENIERÍA DEL CAOS)
--- ==========================================================
-
--- Controla el estado de las máquinas desde la interfaz web
+-- 4. CAPA DE CONTROL (INGENIERÍA DEL CAOS)
 CREATE TABLE IF NOT EXISTS estado_maquinas (
     id_maquina VARCHAR(10) PRIMARY KEY,
     estado_actual VARCHAR(50) DEFAULT 'NORMAL',
     ultima_modificacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Inicialización de las 20 máquinas en estado óptimo
-INSERT INTO estado_maquinas (id_maquina)
-SELECT 'M-' || lpad(i::text, 3, '0') FROM generate_series(1, 20) s(i)
-ON CONFLICT (id_maquina) DO NOTHING;
-
+-- 5. POBLADO DINÁMICO INICIAL
 DO $$
 DECLARE
     i INT;
@@ -73,17 +54,16 @@ BEGIN
         maq_id := 'M-' || LPAD(i::TEXT, 3, '0');
         
         INSERT INTO maquinas (id_maquina, nombre, sector) 
-        VALUES (maq_id, 'Brazo Robótico ' || i, 'Sector Ensamblaje') ON CONFLICT DO NOTHING;
+        VALUES (maq_id, 'Motor Industrial ' || i, 'Planta Principal') 
+        ON CONFLICT DO NOTHING;
         
         INSERT INTO sensores (id_sensor, id_maquina, tipo_medicion, unidad_medida) 
         VALUES ('S-TEMP-' || maq_id, maq_id, 'Temperatura', '°C') ON CONFLICT DO NOTHING;
         
         INSERT INTO sensores (id_sensor, id_maquina, tipo_medicion, unidad_medida) 
         VALUES ('S-VIB-' || maq_id, maq_id, 'Vibracion', 'Hz') ON CONFLICT DO NOTHING;
+
+        INSERT INTO estado_maquinas (id_maquina, estado_actual)
+        VALUES (maq_id, 'NORMAL') ON CONFLICT DO NOTHING;
     END LOOP;
 END $$;
-
--- Insertamos las 20 máquinas por defecto en estado NORMAL
-INSERT INTO estado_maquinas (id_maquina)
-SELECT 'M-' || lpad(i::text, 3, '0') FROM generate_series(1, 20) s(i)
-ON CONFLICT (id_maquina) DO NOTHING;
