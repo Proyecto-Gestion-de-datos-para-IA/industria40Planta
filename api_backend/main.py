@@ -81,3 +81,36 @@ def get_historial(id_maquina: str):
     cur.close()
     conn.close()
     return data
+
+
+from pydantic import BaseModel
+
+class LogEvento(BaseModel):
+    tipo_evento: str
+    maquina_id: str
+    descripcion: str
+
+@app.post("/logs/")
+def registrar_log(evento: LogEvento):
+    """Guarda un evento en la tabla de auditoría."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO log_eventos (tipo_evento, maquina_id, descripcion) VALUES (%s, %s, %s)",
+        (evento.tipo_evento, evento.maquina_id, evento.descripcion)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"status": "registrado"}
+
+@app.get("/logs/")
+def obtener_logs():
+    """Lee los últimos 50 eventos para la página de auditoría."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM log_eventos ORDER BY timestamp_evento DESC LIMIT 50;")
+    data = cur.fetchall()
+    cur.close()
+    conn.close()
+    return data

@@ -67,3 +67,20 @@ BEGIN
         VALUES (maq_id, 'NORMAL') ON CONFLICT DO NOTHING;
     END LOOP;
 END $$;
+
+CREATE TABLE IF NOT EXISTS log_eventos (
+    id SERIAL PRIMARY KEY,
+    timestamp_evento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tipo_evento VARCHAR(50), -- 'SISTEMA_IA', 'USUARIO_CAOS', 'NOTIFICACION'
+    maquina_id VARCHAR(20),
+    descripcion TEXT
+);
+
+-- TABLA DE MANTENIMIENTO PROGRAMADO
+CREATE TABLE IF NOT EXISTS mantenimiento_programado (
+    id SERIAL PRIMARY KEY,
+    maquina_id VARCHAR(20),
+    fecha_sugerida DATE,
+    motivo VARCHAR(255),
+    estado VARCHAR(20) DEFAULT 'PENDIENTE' -- 'PENDIENTE' o 'COMPLETADO'
+);
