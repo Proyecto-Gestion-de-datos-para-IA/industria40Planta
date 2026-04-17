@@ -115,8 +115,8 @@ services:
     container_name: notificador-telegram
     restart: always
     environment:
-      - TELEGRAM_TOKEN=8607862754:AAEWUKVwI9nfBHcSAWicj-ETLlcppA13MvU
-      - TELEGRAM_CHAT_ID=2033409502
+      - TELEGRAM_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     networks:
       - iot-network
     depends_on:
