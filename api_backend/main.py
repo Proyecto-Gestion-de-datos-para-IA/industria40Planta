@@ -1,8 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
-from typing import List
 
 app = FastAPI(title="API Industria 4.0 - Gestión Bellohorizonte")
 
@@ -42,6 +41,23 @@ def get_tiempo_real(id_maquina: str):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("SELECT id_sensor, valor FROM telemetria_limpia WHERE id_sensor LIKE %s ORDER BY timestamp_evento DESC LIMIT 2;", (f"%{id_maquina}%",))
+    data = cur.fetchall()
+    cur.close()
+    conn.close()
+    return data
+
+# --- EL ENDPOINT QUE FALTABA PARA EL GRÁFICO ---
+@app.get("/maquinas/historial/{id_maquina}")
+def get_historial(id_maquina: str):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    query = """
+        SELECT timestamp_ventana, valor_promedio, valor_maximo, decision_id 
+        FROM predicciones_ia_ventanas 
+        WHERE id_sensor = %s 
+        ORDER BY timestamp_ventana DESC LIMIT 30;
+    """
+    cur.execute(query, (id_maquina,))
     data = cur.fetchall()
     cur.close()
     conn.close()
