@@ -1,92 +1,94 @@
-🏭 Gemelo Digital Industrial 4.0 - Mantenimiento Predictivo con IA
-📖 Descripción del Proyecto
-Este proyecto es una plataforma completa de Ingeniería del Caos y Mantenimiento Predictivo diseñada para entornos industriales (Industria 4.0). Simula el comportamiento de una planta de 20 máquinas mediante un Gemelo Digital, procesa la telemetría en tiempo real, aplica Inteligencia Artificial (Random Forest) para predecir fallas antes de que ocurran, y almacena los datos en un Data Lake para su posterior reentrenamiento (MLOps).
+# 🏭 Gemelo Digital Industrial - Planta Bellohorizonte (V1.2)
 
-🏗️ Arquitectura del Sistema
-El flujo de datos sigue una arquitectura moderna orientada a eventos:
+Plataforma integral de **Mantenimiento Predictivo (Industria 4.0)** basada en el procesamiento de eventos en tiempo real (Streaming) e Inteligencia Artificial. Este sistema monitorea una flota de 20 motores industriales, ingesta su telemetría mediante un bus de datos, evalúa riesgos físicos usando Machine Learning y despliega la información en un tablero gerencial.
 
-Simulador IoT (Productor): Genera datos sintéticos de temperatura y vibración en base a estados controlados (Normal, Fricción, Desalineación, Apagada).
+## 🚀 Arquitectura del Sistema
 
-Apache Kafka (Modo KRaft): Actúa como el bus de mensajes de alta velocidad (telemetria_sensores).
+El proyecto está construido bajo una arquitectura de microservicios contenerizados (Docker), separando la ingesta, el procesamiento, la persistencia y la visualización.
 
-Apache Spark (Streaming): Procesa los datos en ventanas de 60 segundos, consulta el modelo de Machine Learning (.pkl) y emite un veredicto.
+- **Generador IoT:** Script en Python que simula la telemetría (Temperatura y Vibración) y permite la inyección de 10 tipos de anomalías.
+- **Bus de Datos:** Apache Kafka + Zookeeper (Tópico: `telemetria_sensores`).
+- **Motor de Procesamiento Big Data:** Apache Spark (PySpark) procesando el streaming en ventanas de tiempo de 1 minuto, aplicando inferencia de Machine Learning.
+- **Data Lake & Storage:** MinIO (S3 Compatible) para almacenar modelos ML (`.pkl`) y el registro histórico en formato `.parquet`.
+- **Base de Datos Relacional:** PostgreSQL para registrar los estados de las máquinas, telemetría limpia, logs de auditoría y predicciones consolidadas.
+- **API Central:** FastAPI que actúa como capa de abstracción entre la base de datos y los clientes frontend.
+- **Interfaz Gráfica:** Streamlit multipágina (Dashboard Gerencial, Análisis Termográfico y Consola de Caos).
+- **Sistema de Alertas:** Microservicio independiente conectado a la API de Telegram para notificaciones críticas E2E.
 
-PostgreSQL (Hot Storage): Almacena las predicciones recientes y el estado maestro de las máquinas para lectura ultra rápida.
+## ✨ Características Principales (Versión 1.2)
 
-MinIO (Cold Storage / Data Lake): Guarda el histórico inmutable en formato .parquet para análisis forense y reentrenamiento.
+1.  **Dashboard Gerencial con KPIs:** Monitoreo del OEE (Disponibilidad), cálculo de pérdidas financieras en tiempo real y resumen de estado de la flota.
+2.  **Análisis Individual y Termografía:** Inspección de máquinas específicas con velocímetros en tiempo real, gráficos históricos de predicciones de IA y simulación de mapas de calor de superficie.
+3.  **Consola de Ingeniería del Caos:** Interfaz para someter el modelo a estrés, permitiendo inyectar 5 fallas de nivel "Riesgo" (ej. Fricción Leve) y 5 fallas de nivel "Crítico" (ej. Soltura de Base).
+4.  **Auditoría y Logs:** Trazabilidad completa de las intervenciones manuales y notificaciones automáticas.
+5.  **Alertas Push:** Integración con Telegram para notificar al equipo de mantenimiento de manera instantánea ante fallas críticas.
 
-FastAPI & Streamlit: Exponen los datos a través de una API REST y un Dashboard interactivo en tiempo real.
+## 🛠️ Requisitos Previos
 
-🚀 Requisitos Previos
-Para desplegar esta arquitectura, ya sea en un entorno local o en un servidor VPS, solo necesitas:
+- Docker y Docker Compose instalados.
+- (Opcional) DBeaver o pgAdmin para exploración visual de PostgreSQL.
+- Un Bot de Telegram configurado vía `@BotFather` y tu Chat ID (`@userinfobot`).
 
-Docker Engine (v20.0+)
+## ⚙️ Configuración e Instalación
 
-Docker Compose (v2.0+)
+1. **Clonar el repositorio:**
+   ```bash
+   git clone <tu-repositorio>
+   cd industria40Planta
+   Configurar Variables de Entorno (Secretos):
+   Crea un archivo llamado .env en la raíz del proyecto y agrega tus credenciales de Telegram:
+   ```
 
-Al menos 4GB de RAM disponible (8GB recomendados para evitar saturación de Spark/Kafka).
-
-⚙️ Instalación y Despliegue
-
-1. Clonar el repositorio
-   Bash
-   git clone https://github.com/<TU_USUARIO>/<TU_REPO>.git
-   cd <TU_REPO>
-2. Configurar Credenciales (Seguridad)
-   Antes de levantar los servicios, asegúrate de configurar las variables de entorno o modificar el archivo docker-compose.yml para establecer tus contraseñas seguras en los siguientes servicios:
-
-PostgreSQL: POSTGRES_PASSWORD=<TU_PASSWORD_DB>
-
-MinIO: MINIO_ROOT_PASSWORD=<TU_PASSWORD_MINIO>
-
-Nota: Asegúrate de actualizar estas mismas credenciales en los archivos de conexión de la API, Spark y los scripts de MLOps.
-
-3. Generar el Modelo Base (Local)
-   Antes de desplegar en producción, Spark necesita un modelo de IA inicial para arrancar.
-
-Bash
-cd procesamiento_spark
-python train_model.py
-cd ..
-(Esto generará el archivo modelo_falla.pkl localmente. Asegúrate de incluirlo al subir tu código al VPS).
-
-4. Iniciar la Infraestructura (Coreografía)
-   Debido a que Kafka y Postgres necesitan tiempo para inicializarse antes de que Spark intente conectarse, utiliza el script de arranque orquestado incluido en la raíz del proyecto:
+Fragmento de código
+TELEGRAM_BOT_TOKEN=tu_token_aqui
+TELEGRAM_CHAT_ID=tu_chat_id_aqui
+Levantar la Infraestructura Core:
+Inicia los servicios base (Postgres, Kafka, MinIO).
 
 Bash
-chmod +x up.sh
-./up.sh
-🌐 Accesos a la Plataforma
-Una vez que el script up.sh finalice con éxito, los servicios estarán disponibles en los siguientes puertos (si estás en un VPS, reemplaza localhost por la IP pública de tu servidor, o usa tus subdominios si configuraste Nginx Proxy Manager):
+docker compose up -d postgres zookeeper kafka minio
+Configurar el Data Lake (MinIO):
 
-Dashboard Operativo: http://localhost:8501
+Ingresa a http://localhost:9001 (User: admin / Pass: Industria40_Secure).
 
-API REST (Documentación): http://localhost:8000/docs
+Crea un bucket llamado datasets. (Paso obligatorio para que Spark pueda guardar el histórico).
 
-MinIO Console (Data Lake): http://localhost:9001
-
-Nginx Proxy Manager: http://localhost:81
-
-🔄 Ciclo de Vida MLOps (Reentrenamiento)
-Este proyecto incluye un pipeline automatizado para reentrenar la IA utilizando los datos reales y dinámicos almacenados en el Data Lake (MinIO).
-
-Cuando el sistema haya recopilado suficiente información de eventos de falla:
+Levantar el Ecosistema Completo:
 
 Bash
-cd mlops_pipeline
-pip install -r requirements.txt
-python retrain_minio.py
-El script leerá los archivos .parquet directamente de MinIO (evitando sobrecargar la base de datos de producción), limpiará los datos de las máquinas apagadas, entrenará un modelo_v2 y lo respaldará automáticamente de forma versionada en el bucket modelos.
+docker compose up -d --build
+🖥️ Uso de la Plataforma
+Una vez levantados todos los contenedores, la plataforma expone los siguientes puertos:
 
-📁 Estructura del Proyecto
-Plaintext
-├── api_servicio/ # Backend FastAPI (Lectura de BD)
-├── dashboard/ # Interfaz UI en Streamlit + Consola del Caos
-├── mlops_pipeline/ # Scripts de extracción y reentrenamiento ML
-├── procesamiento_spark/ # Motor de Streaming, Ventanas de tiempo e Inferencia
-├── simulador_iot/ # Productor Kafka y reglas matemáticas de fallas
-├── docker-compose.yml # Orquestación global de contenedores
-├── init.sql # Esquema de tablas y sembrado inicial de Postgres
-└── up.sh # Script de arranque escalonado
-👨‍💻 Autor
-Desarrollado como proyecto de título / prueba de concepto para la integración avanzada de Tecnologías de la Información, Industria 4.0 y Big Data.
+Dashboard Streamlit: http://localhost:8501
+
+FastAPI (Documentación Swagger): http://localhost:8000/docs
+
+Consola MinIO: http://localhost:9001
+
+Flujo de Pruebas (End-to-End):
+
+Abre el Dashboard y verifica que las 20 máquinas operen en estado NORMAL.
+
+Navega a la Consola del Caos e inyecta una falla crítica (ej. Rotura de Engranaje) en una máquina.
+
+Verifica la actualización del registro en la tabla de auditoría.
+
+Navega a Análisis Individual para ver los sensores reaccionar en tiempo real y el mapa de calor intensificarse.
+
+Revisa tu celular: el bot de Telegram debe haber enviado una alerta de emergencia en menos de 20 segundos.
+
+🗺️ Roadmap y Siguientes Pasos (V2.0)
+Integración de modelos Deep Learning (CNN).
+
+Transmisión y análisis de imágenes sintéticas de termografía en tiempo real vía Kafka.
+
+Predicción de Vida Útil Restante (RUL).
+
+Desarrollado con arquitectura de grado industrial para la monitorización proactiva de activos.
+
+---
+
+Con esto documentado, tu repositorio tiene una estructura inmejorable. Cualquiera que lea este README entenderá el problema de negocio que estás resolviendo y el arsenal de tecnologías que lograste orquestar.
+
+Cuando tengas ese bloqueo de red solucionado y recibas el mensaje en Telegram (sea reinic
