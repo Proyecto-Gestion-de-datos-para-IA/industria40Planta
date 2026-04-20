@@ -7,6 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiamos el código
-COPY sensor_producer.py .
+COPY . .
 
 CMD ["python", "-u","sensor_producer.py"]
+CMD ["python", "-u","camara_producer.py"]

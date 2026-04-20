@@ -1,31 +1,39 @@
 import streamlit as st
 import requests
-import pandas as pd
 import psycopg2
 import time
+import pandas as pd
 
 st.set_page_config(page_title="Consola de Ingeniería del Caos", page_icon="🌪️", layout="wide")
+
 API_URL = "http://api-servicio:8000"
 
 st.markdown("<h1 style='color: #EF553B;'>🌪️ Consola de Ingeniería del Caos</h1>", unsafe_allow_html=True)
 st.write("Inyecta fallas progresivas y controla el estado de las máquinas en tiempo real.")
 
-# --- 1. FUNCIÓN DE COMANDOS ---
 def update_estado(maquina_id, nuevo_estado):
     try:
-        requests.post(f"{API_URL}/logs/", json={"tipo_evento": "USUARIO_CAOS", "maquina_id": maquina_id, "descripcion": f"Cambio manual a: {nuevo_estado}"})
+        requests.post(f"{API_URL}/logs/", json={
+            "tipo_evento": "USUARIO_CAOS",
+            "maquina_id": maquina_id,
+            "descripcion": f"Cambio manual de estado a: {nuevo_estado}"
+        })
+        
         conn = psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")
         cur = conn.cursor()
         cur.execute("UPDATE estado_maquinas SET estado_actual = %s, ultima_modificacion = CURRENT_TIMESTAMP WHERE id_maquina = %s;", (nuevo_estado, maquina_id))
         conn.commit()
         conn.close()
         st.success(f"✅ Orden enviada: {maquina_id} -> {nuevo_estado}")
+        time.sleep(1)
+        st.rerun()
     except Exception as e:
-        st.error(f"Error al procesar el comando: {e}")
+        st.error(f"Error conectando a la BD o API: {e}")
 
-maq_objetivo = st.selectbox("Seleccione la Máquina Objetivo:", [f"M-{str(i).zfill(3)}" for i in range(1, 21)])
+maquinas = [f"M-{str(i).zfill(3)}" for i in range(1, 21)]
+maq_objetivo = st.selectbox("Seleccione la Máquina Objetivo:", maquinas)
 
-# --- 2. BOTONES DE CAOS (3 COLUMNAS) ---
+# --- BOTONES DE CAOS ALINEADOS AL SIMULADOR ---
 col_op, col_riesgo, col_crit = st.columns(3)
 
 with col_op:
@@ -46,7 +54,7 @@ with col_riesgo:
 
 with col_crit:
     with st.container(border=True):
-        st.subheader("🚨 Fallas (Críticas - Telegram)")
+        st.subheader("🚨 Fallas (Críticas)")
         if st.button("🔴 Fricción Severa", use_container_width=True): update_estado(maq_objetivo, "FRICCION_SEVERA")
         if st.button("🔴 Desalineación Severa", use_container_width=True): update_estado(maq_objetivo, "DESALINEACION_SEVERA")
         if st.button("🔴 Falla Refrigeración", use_container_width=True): update_estado(maq_objetivo, "FALLA_REFRIGERACION")
@@ -55,7 +63,7 @@ with col_crit:
 
 st.divider()
 
-# --- 3. TABLA DE MONITOREO EN VIVO ---
+# --- TABLA DE MONITOREO ---
 st.subheader("📋 Estado Actual de la Planta")
 
 def fetch_status():
@@ -73,12 +81,11 @@ if data:
         if val == 'NORMAL': return 'background-color: #d4edda'
         elif val == 'APAGADA': return 'background-color: #e2e3e5'
         elif any(c in str(val) for c in ['SEVERA', 'FALLA', 'SOLTURA', 'ROTURA']): return 'background-color: #f8d7da'
-        else: return 'background-color: #fff3cd' 
+        else: return 'background-color: #fff3cd'
 
     st.table(df_display.style.applymap(color_estado, subset=['Estado Configurado']))
 else:
-    st.info("Esperando conexión con la API de estados...")
+    st.info("Esperando conexión con la API...")
 
-st.empty()
-time.sleep(5)
+time.sleep(10)
 st.rerun()
