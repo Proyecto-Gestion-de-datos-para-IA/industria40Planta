@@ -6,7 +6,6 @@ from kafka import KafkaProducer
 import psycopg2
 
 def obtener_configuracion_viva():
-    """Lee la lista de máquinas y su estado directamente de Postgres."""
     try:
         conn = psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")
         cur = conn.cursor()
@@ -15,7 +14,6 @@ def obtener_configuracion_viva():
         conn.close()
         return rows
     except Exception as e:
-        print(f"🔄 Esperando conexión con Postgres para leer configuración...")
         return []
 
 def generar_lectura(maquina_id, estado):
@@ -25,7 +23,7 @@ def generar_lectura(maquina_id, estado):
     elif estado == "APAGADA":
         t, v = np.random.normal(22, 0.5), np.random.normal(0, 0.1)
         
-    # --- 5 ESTADOS DE RIESGO (Anomalías leves, Nivel 1) ---
+    # --- 5 ESTADOS DE RIESGO ---
     elif estado == "FRICCION_LEVE":
         t, v = np.random.normal(65, 3), np.random.normal(15, 2)
     elif estado == "DESALINEACION_LEVE":
@@ -37,20 +35,21 @@ def generar_lectura(maquina_id, estado):
     elif estado == "SOBRECARGA_LIGERA":
         t, v = np.random.normal(75, 3), np.random.normal(12, 1)
 
-    # --- 5 ESTADOS CRÍTICOS (Peligro inminente, Nivel 2 -> Telegram) ---
+    # --- 5 ESTADOS CRÍTICOS ---
     elif estado == "FRICCION_SEVERA":
         t, v = np.random.normal(95, 4), np.random.normal(28, 3)
     elif estado == "DESALINEACION_SEVERA":
         t, v = np.random.normal(60, 3), np.random.normal(45, 4)
     elif estado == "FALLA_REFRIGERACION":
-        t, v = np.random.normal(115, 5), np.random.normal(15, 2)
+        t, v = np.random.normal(115, 5), np.random.normal(15, 2) # ¡AQUÍ ESTÁ LA TEMPERATURA EXTREMA!
     elif estado == "SOLTURA_BASE":
         t, v = np.random.normal(48, 3), np.random.normal(65, 5)
     elif estado == "ROTURA_ENGRANAJE":
         t, v = np.random.normal(88, 5), np.random.normal(58, 6)
         
     else:
-        t, v = 40, 10 # Default si hay error
+        # Si no coincide el nombre, envía normal
+        t, v = 40, 10
 
     ts = datetime.utcnow().isoformat() + "Z"
     return [
@@ -59,8 +58,8 @@ def generar_lectura(maquina_id, estado):
     ]
 
 if __name__ == "__main__":
-    print("🚀 Simulador Dinámico Iniciado (Con 10 Fallas)...")
-    time.sleep(15) # Margen para que Kafka y Postgres despierten
+    print("🚀 Simulador Numérico Iniciado (V2.0 Calibrado con 10 fallas)...")
+    time.sleep(15) 
     producer = KafkaProducer(
         bootstrap_servers=['kafka:9092'],
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -69,7 +68,8 @@ if __name__ == "__main__":
     while True:
         maquinas = obtener_configuracion_viva()
         for id_maq, estado in maquinas:
-            for dato in generar_lectura(id_maq, estado):
+            lecturas = generar_lectura(id_maq, estado)
+            for dato in lecturas:
                 producer.send('telemetria_sensores', value=dato)
         
         producer.flush()

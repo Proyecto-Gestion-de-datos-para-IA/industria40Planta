@@ -6,7 +6,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiamos el código
-COPY sensor_producer.py .
+# Copiamos el código y el script de arranque
+COPY . .
 
-CMD ["python", "-u","sensor_producer.py"]
+# Damos permisos de ejecución al script
+RUN chmod +x start.sh
+
+# Ejecutamos el script
+CMD ["./start.sh"]

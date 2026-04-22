@@ -1,0 +1,50 @@
+name: 🚀 Despliegue a Produccion Planta 4.0
+
+on:
+  push:
+    branches:
+      - version2.0 # Se ejecuta solo cuando subes código a esta rama
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🌐 Conectando al VPS y Desplegando
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            # 1. Ir a la carpeta del proyecto
+            cd /root/proyecto-iot/industria40Planta
+
+            # 2. Descargar la última versión del código
+            git fetch --all
+            git reset --hard origin/version2.0
+
+            # 3. Reconstruir el archivo .env dinámicamente
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
+            echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> .env
+
+            # 4. Login en Docker para evitar el "Pull Rate Limit"
+            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+            # 5. DESPLIEGUE ESCALONADO (Staged Rollout)
+            # Fase A: Apagar servicios viejos
+            docker compose down
+
+            # Fase B: Levantar Persistencia y esperar 20 segundos
+            docker compose up -d iot-postgres kafka minio nginx-proxy
+            sleep 20
+
+            # Fase C: Levantar Cerebro y Sensores y esperar 15 segundos
+            docker compose up -d --build simulador-iot iot-spark-app
+            sleep 15
+
+            # Fase D: Levantar Interfaces (Protegidas por Nginx local)
+            docker compose up -d --build api-servicio dashboard notificador-telegram
+
+            # 6. LIMPIEZA AUTOMÁTICA (Adiós a los 77GB de imágenes huérfanas)
+            docker image prune -f

@@ -122,6 +122,26 @@ services:
     depends_on:
       - api-servicio
 
+  init-kafka:
+    image: apache/kafka:latest
+    container_name: init-kafka
+    depends_on:
+      - kafka
+    networks:
+      - iot-network
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      # Esperar a que Kafka esté listo
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+
+      echo 'Creando tópicos de la planta...'
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic telemetria_sensores --partitions 1 --replication-factor 1
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic video_termico --partitions 1 --replication-factor 1
+
+      echo 'Tópicos creados exitosamente.'
+      "
+
 networks:
   iot-network:
     driver: bridge
