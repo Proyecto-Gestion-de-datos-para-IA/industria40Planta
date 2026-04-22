@@ -5,6 +5,21 @@ from datetime import datetime
 from kafka import KafkaProducer
 import psycopg2
 
+"""
+=============================================================================
+MÓDULO: Productor de Telemetría IoT (Sensores Numéricos)
+VERSIÓN: 2.5
+DESCRIPCIÓN: 
+Este script simula sensores físicos de la planta. Genera datos estructurados 
+(Temperatura, Presión, Vibración) y los inyecta en un bus de mensajería (Kafka).
+CONTEXTO DE INTELIGENCIA ARTIFICIAL:
+Los datos generados aquí sirven como "Features" (características) de entrada 
+para modelos de Machine Learning clásico. 
+Actualmente preparados para: Detección de Anomalías (Ej. Isolation Forest).
+Futuro: Predicción de Vida Útil Restante (RUL) mediante series temporales.
+=============================================================================
+"""
+
 def obtener_configuracion_viva():
     try:
         conn = psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")

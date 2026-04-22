@@ -2,14 +2,23 @@ import streamlit as st
 import requests
 import time
 
-st.set_page_config(page_title="Planta Bellohorizonte V1.2", layout="wide")
+# 🚨 REGLA DE ORO: set_page_config DEBE SER EL PRIMER COMANDO 🚨
+st.set_page_config(page_title="Planta Bellohorizonte V2.5", layout="wide")
+
+# =============================================================================
+# MÓDULO: Monitor en Vivo (Dashboard Principal)
+# VERSIÓN: 2.5
+# =============================================================================
+
 API_URL = "http://api-servicio:8000"
 
-st.title("🏭 Planta Industrial Bellohorizonte - Dashboard General")
+st.title("🏭 Planta Industrial Bellohorizonte - Monitor en Vivo")
 
 def fetch_data():
-    try: return requests.get(f"{API_URL}/maquinas/estado-general").json()
-    except: return []
+    try: 
+        return requests.get(f"{API_URL}/maquinas/estado-general").json()
+    except: 
+        return []
 
 data = fetch_data()
 
@@ -23,51 +32,21 @@ else:
     riesgosas = len([m for m in data if m['decision_id'] == 1])
     operativas = total - apagadas - criticas
     
-    # Cálculos
     disponibilidad = (operativas / total) * 100 if total > 0 else 0
     perdida_min = ((apagadas + criticas) * 150) / 60
 
     st.subheader("📈 Indicadores Clave de Desempeño (KPIs)")
     k1, k2, k3, k4 = st.columns(4)
     
-    k1.metric(
-        label="OEE (Disponibilidad)", 
-        value=f"{disponibilidad:.1f}%", 
-        delta=f"{disponibilidad - 100:.1f}% vs Ideal",
-        help="**Fórmula:** (Máquinas 100% Operativas / Total de Máquinas) * 100\n\n*Nota: Las máquinas en estado RIESGO se consideran operativas. Las APAGADAS o en FALLA CRÍTICA penalizan este indicador.*"
-    )
-    
-    k2.metric(
-        label="Pérdida Financiera", 
-        value=f"${perdida_min:.2f} USD/min", 
-        delta="Impacto por inactividad", 
-        delta_color="inverse",
-        help="**Fórmula:** (Máquinas Apagadas + Críticas) * Costo Base Hora / 60\n\n*Nota: Se estima un costo de lucro cesante de $150 USD por cada hora que una máquina no está produciendo.*"
-    )
-    
-    k3.metric(
-        label="Alertas Críticas", 
-        value=criticas, 
-        delta="Requieren detención inmediata", 
-        delta_color="inverse" if criticas > 0 else "normal",
-        help="**Origen:** Sumatoria de equipos donde la Inteligencia Artificial (Random Forest) detectó patrones de Falla Inminente (Decision ID = 2). Gatilla el bot de emergencias."
-    )
-    
-    k4.metric(
-        label="Máquinas en Riesgo", 
-        value=riesgosas, 
-        delta="Requieren mantenimiento preventivo", 
-        delta_color="off",
-        help="**Origen:** Sumatoria de equipos con anomalías leves (Decision ID = 1). La máquina sigue operando, pero presenta fricción o vibración fuera de la norma base."
-    )
+    k1.metric("OEE (Disponibilidad)", f"{disponibilidad:.1f}%", f"{disponibilidad - 100:.1f}% vs Ideal")
+    k2.metric("Pérdida Financiera", f"${perdida_min:.2f} USD/min", "Impacto por inactividad", delta_color="inverse")
+    k3.metric("Alertas Críticas", criticas, "Requieren detención inmediata", delta_color="inverse" if criticas > 0 else "normal")
+    k4.metric("Máquinas en Riesgo", riesgosas, "Requieren mantenimiento preventivo", delta_color="off")
 
     st.divider()
 
     # --- 2. SIMBOLOGÍA ---
-    st.markdown("""
-    **Simbología de Estado IA:**
-    🟢 **NORMAL:** Operación óptima | 🟠 **RIESGO:** Falla incipiente (Precaución) | 🔴 **FALLA:** Peligro inminente | ⚪ **INACTIVA:** Máquina Apagada
-    """)
+    st.markdown("**Simbología de Estado IA:** 🟢 **NORMAL** | 🟠 **RIESGO** | 🔴 **FALLA** | ⚪ **INACTIVA**")
     st.write("")
 
     # --- 3. GRILLA DE EQUIPOS (Tarjetas Completas) ---
@@ -96,6 +75,7 @@ else:
                 </div>
             """, unsafe_allow_html=True)
 
+# Refresco automático
 st.empty()
 time.sleep(5)
 st.rerun()

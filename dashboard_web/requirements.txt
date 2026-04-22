@@ -3,7 +3,10 @@ pandas==2.2.0
 plotly==5.18.0
 requests==2.31.0
 psycopg2-binary==2.9.9
+joblib==1.3.2
 numpy
 kafka-python
 tensorflow-cpu
 google-genai
+s3fs
+pyarrow

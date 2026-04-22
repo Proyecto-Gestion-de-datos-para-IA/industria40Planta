@@ -5,6 +5,22 @@ import psycopg2
 from kafka import KafkaProducer
 from datetime import datetime
 
+"""
+=============================================================================
+MÓDULO: Productor de Visión IoT (Cámara Térmica)
+VERSIÓN: 2.5
+DESCRIPCIÓN: 
+Simula una matriz de píxeles térmicos de las máquinas. Envía matrices 
+multidimensionales a través de Kafka simulando un flujo de video a bajos FPS.
+CONTEXTO DE INTELIGENCIA ARTIFICIAL:
+Los frames generados son datos no estructurados.
+Actualmente preparados para: Mapas de calor en tiempo real (Visualización).
+Futuro: Redes Neuronales Convolucionales (CNN) para detectar patrones de 
+sobrecalentamiento o fisuras en el material antes de que los sensores numéricos 
+lo detecten.
+=============================================================================
+"""
+
 def obtener_configuracion_viva():
     try:
         conn = psycopg2.connect(host="iot-postgres", port="5432", dbname="industria40", user="admin", password="admin123")
