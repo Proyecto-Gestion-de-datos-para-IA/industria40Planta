@@ -10,3 +10,4 @@ tensorflow-cpu
 google-genai
 s3fs
 pyarrow
+scikit-learn>=1.4.0

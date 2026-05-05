@@ -58,6 +58,10 @@ def obtener_predicciones():
     try:
         response = requests.get(f"{API_URL}/maquinas/estado-general", timeout=3)
         data = response.json()
+
+        if not data:
+            st.warning("⚠️ La API respondió, pero la lista de máquinas está VACÍA. ¿Está corriendo el simulador?")
+            return pd.DataFrame()
         
         resultados = []
         for maq in data:
@@ -80,7 +84,9 @@ def obtener_predicciones():
                 "RUL": round(minutos_restantes, 1)
             })
         return pd.DataFrame(resultados)
-    except:
+    except Exception as e:
+        # Esto te dirá exactamente qué falla: si es la URL, el modelo, o los datos
+        st.error(f"❌ Error crítico en la predicción: {e}")
         return pd.DataFrame()
 
 df_pred = obtener_predicciones()

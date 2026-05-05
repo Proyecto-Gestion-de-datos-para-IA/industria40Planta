@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s # Raspar datos cada 15 segundos
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'docker_cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080'] # Aquí le decimos que vigile a cAdvisor
